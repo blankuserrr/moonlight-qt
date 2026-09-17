@@ -98,6 +98,16 @@ jobs:
       - name: Build libva
         working-directory: deps/libva
         run: |
+          echo "=== Wayland diagnostics ==="
+          dpkg -s libwayland-dev || true
+          dpkg -L libwayland-dev | grep 'wayland-client.pc' || true
+          pkg-config --version
+          pkg-config --modversion wayland-client || true
+          pkg-config --cflags --libs wayland-client || true
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+          echo "PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR"
+          pkg-config --variable pc_path pkg-config
+
           ./autogen.sh
           ./configure --enable-x11=no --enable-drm=yes --enable-wayland=yes
           make -j$(nproc)
