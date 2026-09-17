@@ -98,19 +98,33 @@ jobs:
       - name: Build libva
         working-directory: deps/libva
         run: |
-          echo "=== Wayland diagnostics ==="
-          dpkg -s libwayland-dev || true
-          dpkg -L libwayland-dev | grep 'wayland-client.pc' || true
-          pkg-config --version
-          pkg-config --modversion wayland-client || true
-          pkg-config --cflags --libs wayland-client || true
-          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
-          echo "PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR"
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libwayland-dev \
+            libwayland-bin \
+            wayland-protocols \
+            libdrm-dev
+
+          export PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/pkgconfig"
+
+          echo "=== libwayland-dev ==="
+          dpkg -s libwayland-dev
+          echo "=== wayland-client.pc ==="
+          dpkg -L libwayland-dev | grep 'wayland-client.pc'
+
+          echo "=== pkg-config ==="
           pkg-config --variable pc_path pkg-config
+          pkg-config --modversion wayland-client
+          pkg-config --cflags --libs wayland-client
 
           ./autogen.sh
-          ./configure --enable-x11=no --enable-drm=yes --enable-wayland=yes
-          make -j$(nproc)
+          ./configure \
+            --enable-x11=no \
+            --enable-drm=yes \
+            --enable-wayland=yes
+
+          make -j"$(nproc)"
           sudo make install
 
       - name: Checkout libplacebo
