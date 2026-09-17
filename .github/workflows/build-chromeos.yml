@@ -3,6 +3,13 @@ permissions:
   contents: read
 
 on:
+  workflow_dispatch:
+    inputs:
+      ci_version:
+        description: 'CI Version Tag'
+        required: true
+        default: 'v1.0.0'
+        type: string
   workflow_call:
     inputs:
       ci_version:
