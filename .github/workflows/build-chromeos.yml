@@ -1,3 +1,4 @@
+```yaml
 name: Build - ChromeOS Native Bundle
 
 permissions:
@@ -11,7 +12,6 @@ on:
         required: true
         default: 'v1.0.0'
         type: string
-
   workflow_call:
     inputs:
       ci_version:
@@ -35,7 +35,7 @@ jobs:
       - name: Setup environment
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
 
@@ -45,9 +45,18 @@ jobs:
           sudo apt-get update
 
           sudo apt-get install -y \
-            pkg-config \
+            qt6-base-dev \
+            qt6-declarative-dev \
+            libqt6svg6-dev \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-templates \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtqml-workerscript \
+            qml6-module-qtquick-window \
+            qml6-module-qtquick \
             python3-pip \
             python3-venv \
+            pkg-config \
             nasm \
             libgbm-dev \
             libdrm-dev \
@@ -85,31 +94,18 @@ jobs:
             libpipewire-0.3-dev \
             liburing-dev \
             vulkan-sdk \
-            cmake \
-            qt6-base-dev \
-            qt6-declarative-dev \
-            libqt6svg6-dev \
-            qml6-module-qtquick-controls \
-            qml6-module-qtquick-templates \
-            qml6-module-qtquick-layouts \
-            qml6-module-qtqml-workerscript \
-            qml6-module-qtquick-window \
-            qml6-module-qtquick
+            cmake
 
           # Install Meson in an isolated environment.
           python3 -m venv "$RUNNER_TEMP/meson-venv"
           "$RUNNER_TEMP/meson-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/meson-venv/bin/python" -m pip install meson
 
-          # Ensure subsequent steps can find our Meson.
           echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
 
-          # Explicit pkg-config search paths.
+          # Allow pkg-config to see system and /usr/local .pc files.
           echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
 
-          echo "PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
-
-          # Dependency root.
           mkdir -p dep_root/{bin,include,lib}
 
           echo "DEP_ROOT=$PWD/dep_root" >> "$GITHUB_ENV"
@@ -126,7 +122,7 @@ jobs:
         working-directory: deps/SDL
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           cmake \
             -DSDL_KMSDRM=OFF \
@@ -150,7 +146,7 @@ jobs:
         working-directory: deps/sdl2-compat
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           cmake \
             -DSDL2COMPAT_TESTS=OFF \
@@ -173,7 +169,7 @@ jobs:
         working-directory: deps/SDL_ttf
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           ./autogen.sh
           ./configure
@@ -191,12 +187,19 @@ jobs:
         working-directory: deps/libva
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          ./autogen.sh
+          # Explicitly provide the Wayland compiler/linker flags.
+          # This avoids relying on pkg-config to resolve wayland-client.
+          export WAYLAND_CFLAGS="-I/usr/include"
+          export WAYLAND_LIBS="-L/usr/lib/x86_64-linux-gnu -lwayland-client"
 
-          ./configure \
+          # autogen.sh runs configure internally, so configure arguments
+          # must be passed to autogen.sh. Do not run ./configure again.
+          ./autogen.sh \
+            --prefix=/usr/local \
             --enable-x11=no \
+            --enable-glx=no \
             --enable-drm=yes \
             --enable-wayland=yes
 
@@ -215,7 +218,7 @@ jobs:
         working-directory: deps/libplacebo
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           MESON="$RUNNER_TEMP/meson-venv/bin/meson"
 
@@ -227,8 +230,7 @@ jobs:
             -Ddemos=false
 
           ninja -C build
-
-          "$MESON" install -C build
+          sudo "$MESON" install -C build
 
       - name: Build dav1d
         working-directory: deps
@@ -236,7 +238,9 @@ jobs:
         env:
           DAV1D_VER: 1.5.4
         run: |
-          set -e
+          set -euo pipefail
+
+          MESON="$RUNNER_TEMP/meson-venv/bin/meson"
 
           git clone \
             --branch "$DAV1D_VER" \
@@ -245,8 +249,6 @@ jobs:
 
           pushd dav1d
 
-          MESON="$RUNNER_TEMP/meson-venv/bin/meson"
-
           "$MESON" setup build \
             -Ddefault_library=static \
             -Dbuildtype=release \
@@ -254,7 +256,7 @@ jobs:
             -Denable_tests=false
 
           ninja -C build
-          "$MESON" install -C build
+          sudo "$MESON" install -C build
 
           popd
 
@@ -269,7 +271,7 @@ jobs:
         working-directory: deps/FFmpeg
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           ./configure \
             --enable-pic \
@@ -306,15 +308,15 @@ jobs:
       - name: Build and Package ChromeOS Native Bundle
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           sudo ldconfig
 
-          # 1. Build Moonlight binary
+          # Build Moonlight.
           qmake6 Moonlight.pro
           make -j"$(nproc)"
 
-          # 2. Structure bundle directory
+          # Bundle layout.
           BUNDLE_DIR="build/moonlight-chromeos"
 
           mkdir -p \
@@ -322,30 +324,30 @@ jobs:
             "$BUNDLE_DIR/lib" \
             "$BUNDLE_DIR/qt6/plugins/platforms"
 
-          # Copy main binary
+          # Main executable.
           cp app/moonlight "$BUNDLE_DIR/bin/"
 
-          # Copy built shared dependencies
+          # Built libraries.
           cp /usr/local/lib/libSDL3*.so* "$BUNDLE_DIR/lib/"
           cp /usr/local/lib/libav*.so* "$BUNDLE_DIR/lib/"
           cp /usr/local/lib/libplacebo*.so* "$BUNDLE_DIR/lib/"
           cp /usr/local/lib/libva*.so* "$BUNDLE_DIR/lib/"
 
-          # Copy Qt Wayland platform plugin
+          # Qt Wayland platform plugin.
           cp \
             /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so \
             "$BUNDLE_DIR/qt6/plugins/platforms/"
 
-          # Copy Qt Wayland plugin dependencies
+          # Qt Wayland plugin directory.
           cp -r \
             /usr/lib/x86_64-linux-gnu/qt6/plugins/wayland-* \
             "$BUNDLE_DIR/qt6/plugins/"
 
-          # 3. Create launcher script
+          # Launcher.
           cat << 'EOF' > "$BUNDLE_DIR/start-moonlight.sh"
           #!/bin/sh
 
-          BASE="$(cd "$(dirname "$0")" && pwd)"
+          BASE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
           export XDG_RUNTIME_DIR="/run/chrome"
           export WAYLAND_DISPLAY="wayland-0"
@@ -358,7 +360,7 @@ jobs:
 
           chmod +x "$BUNDLE_DIR/start-moonlight.sh"
 
-          # 4. Package bundle
+          # Package.
           tar -czf \
             build/Moonlight-ChromeOS-Native.tar.gz \
             -C build \
@@ -369,3 +371,4 @@ jobs:
         with:
           name: Moonlight-ChromeOS-Native-${{ env.CI_VERSION }}
           path: build/Moonlight-ChromeOS-Native.tar.gz
+```
