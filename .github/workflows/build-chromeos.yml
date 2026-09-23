@@ -33,7 +33,10 @@ jobs:
           fetch-depth: 1
 
       - name: Setup environment
+        shell: bash
         run: |
+          set -e
+
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
 
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list \
@@ -43,16 +46,8 @@ jobs:
 
           sudo apt-get install -y \
             pkg-config \
-            qt6-base-dev \
-            qt6-declarative-dev \
-            libqt6svg6-dev \
-            qml6-module-qtquick-controls \
-            qml6-module-qtquick-templates \
-            qml6-module-qtquick-layouts \
-            qml6-module-qtqml-workerscript \
-            qml6-module-qtquick-window \
-            qml6-module-qtquick \
             python3-pip \
+            python3-venv \
             nasm \
             libgbm-dev \
             libdrm-dev \
@@ -90,16 +85,31 @@ jobs:
             libpipewire-0.3-dev \
             liburing-dev \
             vulkan-sdk \
-            cmake
+            cmake \
+            qt6-base-dev \
+            qt6-declarative-dev \
+            libqt6svg6-dev \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-templates \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtqml-workerscript \
+            qml6-module-qtquick-window \
+            qml6-module-qtquick
 
-          python3 -m pip install --user meson
+          # Install Meson in an isolated environment.
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install meson
 
-          # Make Ubuntu's pkg-config directories explicit.
-          # This is what fixes libva's wayland-client detection.
+          # Ensure subsequent steps can find our Meson.
+          echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
+
+          # Explicit pkg-config search paths.
           echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
 
           echo "PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
 
+          # Dependency root.
           mkdir -p dep_root/{bin,include,lib}
 
           echo "DEP_ROOT=$PWD/dep_root" >> "$GITHUB_ENV"
@@ -114,7 +124,10 @@ jobs:
 
       - name: Build SDL3
         working-directory: deps/SDL
+        shell: bash
         run: |
+          set -e
+
           cmake \
             -DSDL_KMSDRM=OFF \
             -DSDL_TEST_LIBRARY=OFF \
@@ -135,7 +148,10 @@ jobs:
 
       - name: Build sdl2-compat
         working-directory: deps/sdl2-compat
+        shell: bash
         run: |
+          set -e
+
           cmake \
             -DSDL2COMPAT_TESTS=OFF \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
@@ -155,7 +171,10 @@ jobs:
 
       - name: Build SDL_ttf
         working-directory: deps/SDL_ttf
+        shell: bash
         run: |
+          set -e
+
           ./autogen.sh
           ./configure
           make -j"$(nproc)"
@@ -170,7 +189,10 @@ jobs:
 
       - name: Build libva
         working-directory: deps/libva
+        shell: bash
         run: |
+          set -e
+
           ./autogen.sh
 
           ./configure \
@@ -191,22 +213,31 @@ jobs:
 
       - name: Build libplacebo
         working-directory: deps/libplacebo
+        shell: bash
         run: |
+          set -e
+
+          MESON="$RUNNER_TEMP/meson-venv/bin/meson"
+
           git apply ../../app/deploy/linux/appimage/*.patch
 
-          meson setup build \
+          "$MESON" setup build \
             -Dvulkan=enabled \
             -Dopengl=disabled \
             -Ddemos=false
 
           ninja -C build
-          sudo ninja install -C build
+
+          "$MESON" install -C build
 
       - name: Build dav1d
         working-directory: deps
+        shell: bash
         env:
           DAV1D_VER: 1.5.4
         run: |
+          set -e
+
           git clone \
             --branch "$DAV1D_VER" \
             --depth 1 \
@@ -214,14 +245,16 @@ jobs:
 
           pushd dav1d
 
-          meson setup build \
+          MESON="$RUNNER_TEMP/meson-venv/bin/meson"
+
+          "$MESON" setup build \
             -Ddefault_library=static \
             -Dbuildtype=release \
             -Denable_tools=false \
             -Denable_tests=false
 
           ninja -C build
-          sudo ninja install -C build
+          "$MESON" install -C build
 
           popd
 
@@ -234,7 +267,10 @@ jobs:
 
       - name: Build FFmpeg
         working-directory: deps/FFmpeg
+        shell: bash
         run: |
+          set -e
+
           ./configure \
             --enable-pic \
             --enable-lto \
@@ -268,7 +304,10 @@ jobs:
           sudo make install
 
       - name: Build and Package ChromeOS Native Bundle
+        shell: bash
         run: |
+          set -e
+
           sudo ldconfig
 
           # 1. Build Moonlight binary
