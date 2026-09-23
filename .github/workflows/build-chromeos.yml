@@ -108,9 +108,8 @@ jobs:
 
           echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
 
-          # Do not set PKG_CONFIG_LIBDIR.
-          # Preserve Ubuntu's normal pkg-config lookup and add /usr/local.
-          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
+          # Keep all relevant pkg-config directories visible.
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
 
           mkdir -p dep_root/{bin,include,lib}
 
@@ -163,6 +162,26 @@ jobs:
           cmake --build build -j"$(nproc)"
           sudo cmake --install build
 
+          # Moonlight's qmake project asks pkg-config for "sdl2".
+          # SDL2-compat installs "sdl2-compat.pc".
+          SDL2_COMPAT_PC="$(find /usr/local -type f -name 'sdl2-compat.pc' -print -quit)"
+
+          if [ -z "$SDL2_COMPAT_PC" ]; then
+            echo "ERROR: sdl2-compat.pc was not installed."
+            exit 1
+          fi
+
+          SDL2_PC_DIR="$(dirname "$SDL2_COMPAT_PC")"
+
+          sudo ln -sf \
+            "$(basename "$SDL2_COMPAT_PC")" \
+            "$SDL2_PC_DIR/sdl2.pc"
+
+          echo "$SDL2_PC_DIR" >> "$GITHUB_PATH"
+
+          # Make sure pkg-config sees the directory.
+          echo "PKG_CONFIG_PATH=$SDL2_PC_DIR:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
+
       - name: Checkout SDL_ttf
         uses: actions/checkout@v5
         with:
@@ -196,7 +215,7 @@ jobs:
           set -euo pipefail
 
           # libva's autogen.sh invokes configure itself.
-          # Pass all configure options here and do not run ./configure again.
+          # Pass configure arguments to autogen.sh only.
           ./autogen.sh \
             --prefix=/usr/local \
             --enable-drm=yes \
@@ -313,10 +332,13 @@ jobs:
 
           cd "$GITHUB_WORKSPACE"
 
-          # The Moonlight project file is moonlight-qt.pro.
+          sudo ldconfig
+
+          # Build Moonlight.
           qmake6 "$GITHUB_WORKSPACE/moonlight-qt.pro"
           make -j"$(nproc)"
 
+          # Bundle layout.
           BUNDLE_DIR="$GITHUB_WORKSPACE/build/moonlight-chromeos"
 
           mkdir -p \
@@ -328,16 +350,23 @@ jobs:
           cp "$GITHUB_WORKSPACE/app/moonlight" \
             "$BUNDLE_DIR/bin/"
 
-          # Built libraries.
+          # SDL3.
           cp /usr/local/lib/libSDL3*.so* \
             "$BUNDLE_DIR/lib/"
 
+          # SDL2-compat.
+          cp /usr/local/lib/libSDL2*.so* \
+            "$BUNDLE_DIR/lib/"
+
+          # FFmpeg.
           cp /usr/local/lib/libav*.so* \
             "$BUNDLE_DIR/lib/"
 
+          # libplacebo.
           cp /usr/local/lib/libplacebo*.so* \
             "$BUNDLE_DIR/lib/"
 
+          # libva.
           cp /usr/local/lib/libva*.so* \
             "$BUNDLE_DIR/lib/"
 
@@ -379,3 +408,4 @@ jobs:
         with:
           name: Moonlight-ChromeOS-Native-${{ env.CI_VERSION }}
           path: build/Moonlight-ChromeOS-Native.tar.gz
+```
