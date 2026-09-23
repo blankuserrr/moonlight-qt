@@ -11,6 +11,7 @@ on:
         required: true
         default: 'v1.0.0'
         type: string
+
   workflow_call:
     inputs:
       ci_version:
@@ -38,14 +39,24 @@ jobs:
 
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
 
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list \
+          sudo wget -qO \
+            /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list \
             https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-jammy.list
 
           sudo apt-get update
 
           sudo apt-get install -y \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            python3-pip \
+            python3-venv \
+            nasm \
+            cmake \
             qt6-base-dev \
             qt6-declarative-dev \
+            qt6-wayland \
             libqt6svg6-dev \
             qml6-module-qtquick-controls \
             qml6-module-qtquick-templates \
@@ -53,10 +64,6 @@ jobs:
             qml6-module-qtqml-workerscript \
             qml6-module-qtquick-window \
             qml6-module-qtquick \
-            python3-pip \
-            python3-venv \
-            pkg-config \
-            nasm \
             libgbm-dev \
             libdrm-dev \
             libfreetype-dev \
@@ -84,26 +91,26 @@ jobs:
             libx11-xcb-dev \
             libxfixes-dev \
             libxtst-dev \
-            wayland-protocols \
             libwayland-dev \
             libwayland-bin \
+            wayland-protocols \
             libopus-dev \
             libvdpau-dev \
             libgl-dev \
             libpipewire-0.3-dev \
             liburing-dev \
-            vulkan-sdk \
-            cmake
+            vulkan-sdk
 
-          # Install Meson in an isolated environment.
+          # Keep Meson and mesonbuild in the same Python environment.
           python3 -m venv "$RUNNER_TEMP/meson-venv"
           "$RUNNER_TEMP/meson-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/meson-venv/bin/python" -m pip install meson
 
           echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
 
-          # Allow pkg-config to see system and /usr/local .pc files.
-          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
+          # Do not set PKG_CONFIG_LIBDIR.
+          # Preserve Ubuntu's normal pkg-config lookup and add /usr/local.
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
 
           mkdir -p dep_root/{bin,include,lib}
 
@@ -188,18 +195,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Explicitly provide the Wayland compiler/linker flags.
-          # This avoids relying on pkg-config to resolve wayland-client.
-          export WAYLAND_CFLAGS="-I/usr/include"
-          export WAYLAND_LIBS="-L/usr/lib/x86_64-linux-gnu -lwayland-client"
-
-          # autogen.sh runs configure internally, so configure arguments
-          # must be passed to autogen.sh. Do not run ./configure again.
+          # libva's autogen.sh invokes configure itself.
+          # Pass all configure options here and do not run ./configure again.
           ./autogen.sh \
             --prefix=/usr/local \
+            --enable-drm=yes \
             --enable-x11=no \
             --enable-glx=no \
-            --enable-drm=yes \
             --enable-wayland=yes
 
           make -j"$(nproc)"
@@ -309,14 +311,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          sudo ldconfig
+          cd "$GITHUB_WORKSPACE"
 
-          # Build Moonlight.
-          qmake6 Moonlight.pro
+          # The Moonlight project file is moonlight-qt.pro.
+          qmake6 "$GITHUB_WORKSPACE/moonlight-qt.pro"
           make -j"$(nproc)"
 
-          # Bundle layout.
-          BUNDLE_DIR="build/moonlight-chromeos"
+          BUNDLE_DIR="$GITHUB_WORKSPACE/build/moonlight-chromeos"
 
           mkdir -p \
             "$BUNDLE_DIR/bin" \
@@ -324,13 +325,21 @@ jobs:
             "$BUNDLE_DIR/qt6/plugins/platforms"
 
           # Main executable.
-          cp app/moonlight "$BUNDLE_DIR/bin/"
+          cp "$GITHUB_WORKSPACE/app/moonlight" \
+            "$BUNDLE_DIR/bin/"
 
           # Built libraries.
-          cp /usr/local/lib/libSDL3*.so* "$BUNDLE_DIR/lib/"
-          cp /usr/local/lib/libav*.so* "$BUNDLE_DIR/lib/"
-          cp /usr/local/lib/libplacebo*.so* "$BUNDLE_DIR/lib/"
-          cp /usr/local/lib/libva*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libSDL3*.so* \
+            "$BUNDLE_DIR/lib/"
+
+          cp /usr/local/lib/libav*.so* \
+            "$BUNDLE_DIR/lib/"
+
+          cp /usr/local/lib/libplacebo*.so* \
+            "$BUNDLE_DIR/lib/"
+
+          cp /usr/local/lib/libva*.so* \
+            "$BUNDLE_DIR/lib/"
 
           # Qt Wayland platform plugin.
           cp \
@@ -361,8 +370,8 @@ jobs:
 
           # Package.
           tar -czf \
-            build/Moonlight-ChromeOS-Native.tar.gz \
-            -C build \
+            "$GITHUB_WORKSPACE/build/Moonlight-ChromeOS-Native.tar.gz" \
+            -C "$GITHUB_WORKSPACE/build" \
             moonlight-chromeos
 
       - name: Upload Binaries
