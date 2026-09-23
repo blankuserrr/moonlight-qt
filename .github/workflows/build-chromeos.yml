@@ -11,7 +11,6 @@ on:
         required: true
         default: 'v1.0.0'
         type: string
-
   workflow_call:
     inputs:
       ci_version:
@@ -29,31 +28,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v5
         with:
-          submodules: recursive
+          submodules: 'recursive'
           fetch-depth: 1
 
       - name: Setup environment
         shell: bash
         run: |
-          set -euo pipefail
-
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
 
-          sudo wget -qO \
-            /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list \
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list \
             https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-jammy.list
 
-          sudo apt-get update
+          sudo apt update
 
-          sudo apt-get install -y \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            python3-pip \
-            python3-venv \
-            nasm \
-            cmake \
+          sudo apt install -y \
             qt6-base-dev \
             qt6-declarative-dev \
             qt6-wayland \
@@ -64,6 +52,8 @@ jobs:
             qml6-module-qtqml-workerscript \
             qml6-module-qtquick-window \
             qml6-module-qtquick \
+            python3-pip \
+            nasm \
             libgbm-dev \
             libdrm-dev \
             libfreetype-dev \
@@ -91,30 +81,22 @@ jobs:
             libx11-xcb-dev \
             libxfixes-dev \
             libxtst-dev \
+            wayland-protocols \
             libwayland-dev \
             libwayland-bin \
-            wayland-protocols \
             libopus-dev \
             libvdpau-dev \
             libgl-dev \
             libpipewire-0.3-dev \
             liburing-dev \
-            vulkan-sdk
+            vulkan-sdk \
+            cmake
 
-          # Keep Meson and mesonbuild in the same Python environment.
-          python3 -m venv "$RUNNER_TEMP/meson-venv"
-          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install meson
-
-          echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
-
-          # Keep all relevant pkg-config directories visible.
-          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
+          sudo pip3 install meson
 
           mkdir -p dep_root/{bin,include,lib}
-
-          echo "DEP_ROOT=$PWD/dep_root" >> "$GITHUB_ENV"
-          echo "$PWD/dep_root/bin" >> "$GITHUB_PATH"
+          echo "DEP_ROOT=$PWD/dep_root" >> "${GITHUB_ENV}"
+          echo "$PWD/dep_root/bin" >> "${GITHUB_PATH}"
 
       - name: Checkout SDL3
         uses: actions/checkout@v5
@@ -125,10 +107,7 @@ jobs:
 
       - name: Build SDL3
         working-directory: deps/SDL
-        shell: bash
         run: |
-          set -euo pipefail
-
           cmake \
             -DSDL_KMSDRM=OFF \
             -DSDL_TEST_LIBRARY=OFF \
@@ -137,7 +116,7 @@ jobs:
             -S . \
             -B build
 
-          cmake --build build -j"$(nproc)"
+          cmake --build build -j
           sudo cmake --install build
 
       - name: Checkout sdl2-compat
@@ -149,27 +128,25 @@ jobs:
 
       - name: Build sdl2-compat
         working-directory: deps/sdl2-compat
-        shell: bash
         run: |
-          set -euo pipefail
-
           cmake \
             -DSDL2COMPAT_TESTS=OFF \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
             -S . \
             -B build
 
-          cmake --build build -j"$(nproc)"
+          cmake --build build -j
           sudo cmake --install build
 
           # Moonlight's qmake project asks pkg-config for "sdl2".
-          # SDL2-compat installs "sdl2-compat.pc".
-          SDL2_COMPAT_PC="$(find /usr/local -type f -name 'sdl2-compat.pc' -print -quit)"
+          # SDL2-compat 2.32.70 installs sdl2-compat.pc.
+          SDL2_COMPAT_PC="$(find /usr/local/lib /usr/lib/x86_64-linux-gnu \
+            -type f \
+            -name 'sdl2-compat.pc' \
+            -print \
+            -quit)"
 
-          if [ -z "$SDL2_COMPAT_PC" ]; then
-            echo "ERROR: sdl2-compat.pc was not installed."
-            exit 1
-          fi
+          test -n "$SDL2_COMPAT_PC"
 
           SDL2_PC_DIR="$(dirname "$SDL2_COMPAT_PC")"
 
@@ -177,28 +154,20 @@ jobs:
             "$(basename "$SDL2_COMPAT_PC")" \
             "$SDL2_PC_DIR/sdl2.pc"
 
-          echo "$SDL2_PC_DIR" >> "$GITHUB_PATH"
-
-          # Make sure pkg-config sees the directory.
-          echo "PKG_CONFIG_PATH=$SDL2_PC_DIR:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
-
       - name: Checkout SDL_ttf
         uses: actions/checkout@v5
         with:
           repository: libsdl-org/SDL_ttf
           ref: a883e490e30fb44a5336ea3dcb990c6982c5216f
           path: deps/SDL_ttf
-          submodules: recursive
+          submodules: 'recursive'
 
       - name: Build SDL_ttf
         working-directory: deps/SDL_ttf
-        shell: bash
         run: |
-          set -euo pipefail
-
           ./autogen.sh
           ./configure
-          make -j"$(nproc)"
+          make -j$(nproc)
           sudo make install
 
       - name: Checkout libva
@@ -210,20 +179,15 @@ jobs:
 
       - name: Build libva
         working-directory: deps/libva
-        shell: bash
         run: |
-          set -euo pipefail
-
-          # libva's autogen.sh invokes configure itself.
-          # Pass configure arguments to autogen.sh only.
+          # libva's autogen.sh runs configure itself.
+          # Pass the configure options to it instead of running configure twice.
           ./autogen.sh \
-            --prefix=/usr/local \
-            --enable-drm=yes \
             --enable-x11=no \
-            --enable-glx=no \
+            --enable-drm=yes \
             --enable-wayland=yes
 
-          make -j"$(nproc)"
+          make -j$(nproc)
           sudo make install
 
       - name: Checkout libplacebo
@@ -232,36 +196,26 @@ jobs:
           repository: haasn/libplacebo
           ref: 41ac2980e1a898f41d7c2e07999f9862ee89d99f
           path: deps/libplacebo
-          submodules: recursive
+          submodules: 'recursive'
 
       - name: Build libplacebo
         working-directory: deps/libplacebo
-        shell: bash
         run: |
-          set -euo pipefail
-
-          MESON="$RUNNER_TEMP/meson-venv/bin/meson"
-
           git apply ../../app/deploy/linux/appimage/*.patch
 
-          "$MESON" setup build \
+          meson setup build \
             -Dvulkan=enabled \
             -Dopengl=disabled \
             -Ddemos=false
 
           ninja -C build
-          sudo "$MESON" install -C build
+          sudo ninja install -C build
 
       - name: Build dav1d
         working-directory: deps
-        shell: bash
         env:
           DAV1D_VER: 1.5.4
         run: |
-          set -euo pipefail
-
-          MESON="$RUNNER_TEMP/meson-venv/bin/meson"
-
           git clone \
             --branch "$DAV1D_VER" \
             --depth 1 \
@@ -269,14 +223,14 @@ jobs:
 
           pushd dav1d
 
-          "$MESON" setup build \
+          meson setup build \
             -Ddefault_library=static \
             -Dbuildtype=release \
             -Denable_tools=false \
             -Denable_tests=false
 
           ninja -C build
-          sudo "$MESON" install -C build
+          sudo ninja install -C build
 
           popd
 
@@ -289,10 +243,7 @@ jobs:
 
       - name: Build FFmpeg
         working-directory: deps/FFmpeg
-        shell: bash
         run: |
-          set -euo pipefail
-
           ./configure \
             --enable-pic \
             --enable-lto \
@@ -322,65 +273,47 @@ jobs:
             --enable-libdav1d \
             --enable-decoder=libdav1d
 
-          make -j"$(nproc)"
+          make -j$(nproc)
           sudo make install
 
       - name: Build and Package ChromeOS Native Bundle
-        shell: bash
         run: |
-          set -euo pipefail
-
-          cd "$GITHUB_WORKSPACE"
-
           sudo ldconfig
 
-          # Build Moonlight.
-          qmake6 "$GITHUB_WORKSPACE/moonlight-qt.pro"
-          make -j"$(nproc)"
+          # Build Moonlight from the actual root qmake project.
+          qmake6 moonlight-qt.pro
+          make -j$(nproc)
 
-          # Bundle layout.
-          BUNDLE_DIR="$GITHUB_WORKSPACE/build/moonlight-chromeos"
+          # Structure bundle directory
+          BUNDLE_DIR="build/moonlight-chromeos"
 
           mkdir -p \
             "$BUNDLE_DIR/bin" \
             "$BUNDLE_DIR/lib" \
             "$BUNDLE_DIR/qt6/plugins/platforms"
 
-          # Main executable.
-          cp "$GITHUB_WORKSPACE/app/moonlight" \
-            "$BUNDLE_DIR/bin/"
+          # Copy main binary
+          cp app/moonlight "$BUNDLE_DIR/bin/"
 
-          # SDL3.
-          cp /usr/local/lib/libSDL3*.so* \
-            "$BUNDLE_DIR/lib/"
+          # Copy built shared dependencies
+          cp /usr/local/lib/libSDL3*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libSDL2*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libSDL2_ttf*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libav*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libplacebo*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libva*.so* "$BUNDLE_DIR/lib/"
 
-          # SDL2-compat.
-          cp /usr/local/lib/libSDL2*.so* \
-            "$BUNDLE_DIR/lib/"
-
-          # FFmpeg.
-          cp /usr/local/lib/libav*.so* \
-            "$BUNDLE_DIR/lib/"
-
-          # libplacebo.
-          cp /usr/local/lib/libplacebo*.so* \
-            "$BUNDLE_DIR/lib/"
-
-          # libva.
-          cp /usr/local/lib/libva*.so* \
-            "$BUNDLE_DIR/lib/"
-
-          # Qt Wayland platform plugin.
+          # Copy Qt6 Wayland platform plugin
           cp \
             /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so \
             "$BUNDLE_DIR/qt6/plugins/platforms/"
 
-          # Qt Wayland plugin directory.
+          # Copy Qt6 Wayland plugins
           cp -r \
             /usr/lib/x86_64-linux-gnu/qt6/plugins/wayland-* \
             "$BUNDLE_DIR/qt6/plugins/"
 
-          # Launcher.
+          # Create launcher
           cat << 'EOF' > "$BUNDLE_DIR/start-moonlight.sh"
           #!/bin/sh
 
@@ -397,10 +330,10 @@ jobs:
 
           chmod +x "$BUNDLE_DIR/start-moonlight.sh"
 
-          # Package.
+          # Package bundle
           tar -czf \
-            "$GITHUB_WORKSPACE/build/Moonlight-ChromeOS-Native.tar.gz" \
-            -C "$GITHUB_WORKSPACE/build" \
+            build/Moonlight-ChromeOS-Native.tar.gz \
+            -C build \
             moonlight-chromeos
 
       - name: Upload Binaries
@@ -408,4 +341,3 @@ jobs:
         with:
           name: Moonlight-ChromeOS-Native-${{ env.CI_VERSION }}
           path: build/Moonlight-ChromeOS-Native.tar.gz
-```
