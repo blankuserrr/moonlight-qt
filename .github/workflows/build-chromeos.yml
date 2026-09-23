@@ -1,4 +1,5 @@
 name: Build - ChromeOS Native Bundle
+
 permissions:
   contents: read
 
@@ -10,6 +11,7 @@ on:
         required: true
         default: 'v1.0.0'
         type: string
+
   workflow_call:
     inputs:
       ci_version:
@@ -20,29 +22,88 @@ jobs:
   build:
     env:
       CI_VERSION: ${{ inputs.ci_version }}
+
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
         with:
-          submodules: 'recursive'
+          submodules: recursive
           fetch-depth: 1
 
       - name: Setup environment
         run: |
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-jammy.list
-          sudo apt update
-          sudo apt install -y qt6-base-dev qt6-declarative-dev libqt6svg6-dev qml6-module-qtquick-controls qml6-module-qtquick-templates qml6-module-qtquick-layouts \
-            qml6-module-qtqml-workerscript qml6-module-qtquick-window qml6-module-qtquick python3-pip nasm libgbm-dev libdrm-dev libfreetype-dev libasound2-dev \
-            libdbus-1-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libglu1-mesa-dev libibus-1.0-dev libpulse-dev libudev-dev libx11-dev libxcursor-dev \
-            libxext-dev libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libxss-dev libxt-dev libxv-dev libxxf86vm-dev libxcb-dri3-dev libx11-xcb-dev \
-            libxfixes-dev libxtst-dev wayland-protocols libwayland-dev libopus-dev libvdpau-dev libgl-dev libpipewire-0.3-dev liburing-dev vulkan-sdk cmake
-          sudo pip3 install meson
+
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list \
+            https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-jammy.list
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            pkg-config \
+            qt6-base-dev \
+            qt6-declarative-dev \
+            libqt6svg6-dev \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-templates \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtqml-workerscript \
+            qml6-module-qtquick-window \
+            qml6-module-qtquick \
+            python3-pip \
+            nasm \
+            libgbm-dev \
+            libdrm-dev \
+            libfreetype-dev \
+            libasound2-dev \
+            libdbus-1-dev \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libgles2-mesa-dev \
+            libglu1-mesa-dev \
+            libibus-1.0-dev \
+            libpulse-dev \
+            libudev-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxkbcommon-dev \
+            libxrandr-dev \
+            libxss-dev \
+            libxt-dev \
+            libxv-dev \
+            libxxf86vm-dev \
+            libxcb-dri3-dev \
+            libx11-xcb-dev \
+            libxfixes-dev \
+            libxtst-dev \
+            wayland-protocols \
+            libwayland-dev \
+            libwayland-bin \
+            libopus-dev \
+            libvdpau-dev \
+            libgl-dev \
+            libpipewire-0.3-dev \
+            liburing-dev \
+            vulkan-sdk \
+            cmake
+
+          python3 -m pip install --user meson
+
+          # Make Ubuntu's pkg-config directories explicit.
+          # This is what fixes libva's wayland-client detection.
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
+
+          echo "PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" >> "$GITHUB_ENV"
+
           mkdir -p dep_root/{bin,include,lib}
-          echo "DEP_ROOT=$PWD/dep_root" >> "${GITHUB_ENV}"
-          echo "$PWD/dep_root/bin" >> "${GITHUB_PATH}"
+
+          echo "DEP_ROOT=$PWD/dep_root" >> "$GITHUB_ENV"
+          echo "$PWD/dep_root/bin" >> "$GITHUB_PATH"
 
       - name: Checkout SDL3
         uses: actions/checkout@v5
@@ -54,8 +115,15 @@ jobs:
       - name: Build SDL3
         working-directory: deps/SDL
         run: |
-          cmake -DSDL_KMSDRM=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_INSTALL_DOCS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -S . -B build
-          cmake --build build -j
+          cmake \
+            -DSDL_KMSDRM=OFF \
+            -DSDL_TEST_LIBRARY=OFF \
+            -DSDL_INSTALL_DOCS=OFF \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -S . \
+            -B build
+
+          cmake --build build -j"$(nproc)"
           sudo cmake --install build
 
       - name: Checkout sdl2-compat
@@ -68,8 +136,13 @@ jobs:
       - name: Build sdl2-compat
         working-directory: deps/sdl2-compat
         run: |
-          cmake -DSDL2COMPAT_TESTS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -S . -B build
-          cmake --build build -j
+          cmake \
+            -DSDL2COMPAT_TESTS=OFF \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -S . \
+            -B build
+
+          cmake --build build -j"$(nproc)"
           sudo cmake --install build
 
       - name: Checkout SDL_ttf
@@ -78,14 +151,14 @@ jobs:
           repository: libsdl-org/SDL_ttf
           ref: a883e490e30fb44a5336ea3dcb990c6982c5216f
           path: deps/SDL_ttf
-          submodules: 'recursive'
+          submodules: recursive
 
       - name: Build SDL_ttf
         working-directory: deps/SDL_ttf
         run: |
           ./autogen.sh
           ./configure
-          make -j$(nproc)
+          make -j"$(nproc)"
           sudo make install
 
       - name: Checkout libva
@@ -98,27 +171,8 @@ jobs:
       - name: Build libva
         working-directory: deps/libva
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libwayland-dev \
-            libwayland-bin \
-            wayland-protocols \
-            libdrm-dev
-
-          export PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/pkgconfig"
-
-          echo "=== libwayland-dev ==="
-          dpkg -s libwayland-dev
-          echo "=== wayland-client.pc ==="
-          dpkg -L libwayland-dev | grep 'wayland-client.pc'
-
-          echo "=== pkg-config ==="
-          pkg-config --variable pc_path pkg-config
-          pkg-config --modversion wayland-client
-          pkg-config --cflags --libs wayland-client
-
           ./autogen.sh
+
           ./configure \
             --enable-x11=no \
             --enable-drm=yes \
@@ -133,13 +187,18 @@ jobs:
           repository: haasn/libplacebo
           ref: 41ac2980e1a898f41d7c2e07999f9862ee89d99f
           path: deps/libplacebo
-          submodules: 'recursive'
+          submodules: recursive
 
       - name: Build libplacebo
         working-directory: deps/libplacebo
         run: |
           git apply ../../app/deploy/linux/appimage/*.patch
-          meson setup build -Dvulkan=enabled -Dopengl=disabled -Ddemos=false
+
+          meson setup build \
+            -Dvulkan=enabled \
+            -Dopengl=disabled \
+            -Ddemos=false
+
           ninja -C build
           sudo ninja install -C build
 
@@ -148,11 +207,22 @@ jobs:
         env:
           DAV1D_VER: 1.5.4
         run: |
-          git clone --branch $DAV1D_VER --depth 1 https://code.videolan.org/videolan/dav1d.git
+          git clone \
+            --branch "$DAV1D_VER" \
+            --depth 1 \
+            https://code.videolan.org/videolan/dav1d.git
+
           pushd dav1d
-          meson setup build -Ddefault_library=static -Dbuildtype=release -Denable_tools=false -Denable_tests=false
+
+          meson setup build \
+            -Ddefault_library=static \
+            -Dbuildtype=release \
+            -Denable_tools=false \
+            -Denable_tests=false
+
           ninja -C build
           sudo ninja install -C build
+
           popd
 
       - name: Checkout FFmpeg
@@ -165,56 +235,95 @@ jobs:
       - name: Build FFmpeg
         working-directory: deps/FFmpeg
         run: |
-          ./configure --enable-pic --enable-lto --disable-static --enable-shared --disable-all --disable-autodetect \
-            --enable-avcodec --enable-avformat --enable-swscale \
-            --enable-decoder=h264 --enable-decoder=hevc --enable-decoder=av1 \
-            --enable-vaapi --enable-hwaccel=h264_vaapi --enable-hwaccel=hevc_vaapi --enable-hwaccel=av1_vaapi \
-            --enable-vdpau --enable-hwaccel=h264_vdpau  --enable-hwaccel=hevc_vdpau --enable-hwaccel=av1_vdpau \
-            --enable-libdrm --enable-vulkan --enable-hwaccel=h264_vulkan --enable-hwaccel=hevc_vulkan --enable-hwaccel=av1_vulkan \
-            --enable-libdav1d --enable-decoder=libdav1d
-          make -j$(nproc)
+          ./configure \
+            --enable-pic \
+            --enable-lto \
+            --disable-static \
+            --enable-shared \
+            --disable-all \
+            --disable-autodetect \
+            --enable-avcodec \
+            --enable-avformat \
+            --enable-swscale \
+            --enable-decoder=h264 \
+            --enable-decoder=hevc \
+            --enable-decoder=av1 \
+            --enable-vaapi \
+            --enable-hwaccel=h264_vaapi \
+            --enable-hwaccel=hevc_vaapi \
+            --enable-hwaccel=av1_vaapi \
+            --enable-vdpau \
+            --enable-hwaccel=h264_vdpau \
+            --enable-hwaccel=hevc_vdpau \
+            --enable-hwaccel=av1_vdpau \
+            --enable-libdrm \
+            --enable-vulkan \
+            --enable-hwaccel=h264_vulkan \
+            --enable-hwaccel=hevc_vulkan \
+            --enable-hwaccel=av1_vulkan \
+            --enable-libdav1d \
+            --enable-decoder=libdav1d
+
+          make -j"$(nproc)"
           sudo make install
 
       - name: Build and Package ChromeOS Native Bundle
         run: |
           sudo ldconfig
-          
+
           # 1. Build Moonlight binary
           qmake6 Moonlight.pro
-          make -j$(nproc)
+          make -j"$(nproc)"
 
           # 2. Structure bundle directory
           BUNDLE_DIR="build/moonlight-chromeos"
-          mkdir -p $BUNDLE_DIR/bin $BUNDLE_DIR/lib $BUNDLE_DIR/qt6/plugins/platforms
+
+          mkdir -p \
+            "$BUNDLE_DIR/bin" \
+            "$BUNDLE_DIR/lib" \
+            "$BUNDLE_DIR/qt6/plugins/platforms"
 
           # Copy main binary
-          cp app/moonlight $BUNDLE_DIR/bin/
+          cp app/moonlight "$BUNDLE_DIR/bin/"
 
           # Copy built shared dependencies
-          cp /usr/local/lib/libSDL3*.so* $BUNDLE_DIR/lib/
-          cp /usr/local/lib/libav*.so* $BUNDLE_DIR/lib/
-          cp /usr/local/lib/libplacebo*.so* $BUNDLE_DIR/lib/
-          cp /usr/local/lib/libva*.so* $BUNDLE_DIR/lib/
+          cp /usr/local/lib/libSDL3*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libav*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libplacebo*.so* "$BUNDLE_DIR/lib/"
+          cp /usr/local/lib/libva*.so* "$BUNDLE_DIR/lib/"
 
-          # Copy system Qt6 & Wayland dependencies
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so $BUNDLE_DIR/qt6/plugins/platforms/
-          cp -r /usr/lib/x86_64-linux-gnu/qt6/plugins/wayland-* $BUNDLE_DIR/qt6/plugins/
+          # Copy Qt Wayland platform plugin
+          cp \
+            /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so \
+            "$BUNDLE_DIR/qt6/plugins/platforms/"
+
+          # Copy Qt Wayland plugin dependencies
+          cp -r \
+            /usr/lib/x86_64-linux-gnu/qt6/plugins/wayland-* \
+            "$BUNDLE_DIR/qt6/plugins/"
 
           # 3. Create launcher script
-          cat << 'EOF' > $BUNDLE_DIR/start-moonlight.sh
+          cat << 'EOF' > "$BUNDLE_DIR/start-moonlight.sh"
           #!/bin/sh
+
           BASE="$(cd "$(dirname "$0")" && pwd)"
+
           export XDG_RUNTIME_DIR="/run/chrome"
           export WAYLAND_DISPLAY="wayland-0"
           export QT_QPA_PLATFORM="wayland"
           export QT_PLUGIN_PATH="$BASE/qt6/plugins"
           export LD_LIBRARY_PATH="$BASE/lib:$LD_LIBRARY_PATH"
+
           exec "$BASE/bin/moonlight" "$@"
           EOF
-          chmod +x $BUNDLE_DIR/start-moonlight.sh
 
-          # Tar up the raw binary folder
-          tar -czf build/Moonlight-ChromeOS-Native.tar.gz -C build moonlight-chromeos
+          chmod +x "$BUNDLE_DIR/start-moonlight.sh"
+
+          # 4. Package bundle
+          tar -czf \
+            build/Moonlight-ChromeOS-Native.tar.gz \
+            -C build \
+            moonlight-chromeos
 
       - name: Upload Binaries
         uses: actions/upload-artifact@v6
