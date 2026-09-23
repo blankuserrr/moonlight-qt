@@ -1,4 +1,3 @@
-```yaml
 name: Build - ChromeOS Native Bundle
 
 permissions:
@@ -371,4 +370,3 @@ jobs:
         with:
           name: Moonlight-ChromeOS-Native-${{ env.CI_VERSION }}
           path: build/Moonlight-ChromeOS-Native.tar.gz
-```
